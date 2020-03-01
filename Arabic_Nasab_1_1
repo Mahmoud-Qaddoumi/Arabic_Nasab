@@ -1,0 +1,232 @@
+import networkx as nx
+from bokeh.models import ColumnDataSource, HoverTool, Circle, StaticLayoutProvider, CustomJSTransform, LabelSet
+from bokeh.models.graphs import from_networkx
+from bokeh.transform import transform, linear_cmap
+import pandas as pd
+import numpy as np
+import math
+from bokeh.plotting import figure, show, output_file
+from bokeh.tile_providers import get_provider, Vendors
+from bokeh.layouts import row
+
+
+Names = pd.read_csv('Arab Nasab 24_8.csv', encoding='UTF-8')
+output_file("multiple.html")
+
+# making locations
+def pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return x, y
+
+
+locations = pd.DataFrame()
+locations['Index'] = Names['Index']
+locations['Father_Index'] = Names['Father_Index']
+locations['Layer'] = Names['Layer']
+locations['X'] = 0
+locations['X'] = locations['X'].astype(np.float16)
+locations['Y'] = 0
+locations['Y'] = locations['X'].astype(np.float16)
+locations['r'] = 0
+locations['theta'] = 0
+locations['gama'] = 0
+locations['sons'] = 0
+for index, row in locations.iterrows():
+    row_index = row['Index']
+    number_of_sons = (locations.Father_Index == row_index).sum()
+    locations.sons[row_index - 1] = number_of_sons
+    if row_index == 1:
+        locations.gama[row_index - 1] = 360 / number_of_sons
+    elif number_of_sons == 0 or number_of_sons == 1:
+        locations.gama[row_index - 1] = 0
+    elif number_of_sons == 2 or number_of_sons == 3:
+        locations.gama[row_index - 1] = 30
+    else:
+        locations.gama[row_index - 1] = 70 / (number_of_sons - 1)
+for i in range(locations.Father_Index.max() + 1):
+    df = locations[locations['Father_Index'] == i]
+    if df.empty or i == 0:
+        continue
+    else:
+        index_of_father = i - 1
+        gama = int(locations.loc[[index_of_father], ['gama']].values[0])
+        total_sons = int(locations.loc[[index_of_father], ['sons']].values[0])
+        theta = int(locations.loc[[index_of_father], ['theta']].values[0])
+        r = int(locations.loc[[index - 1], ['sons']].values[0])
+        if r == 0:
+            r = 1
+        if i == 1:
+            z = 1
+            for index, row in df.iterrows():
+                row_index = row['Index']
+                theta_i = theta + (gama * z)
+                locations.theta[row_index - 1] = theta_i
+                z = z + 1
+                locations.r[row_index - 1] = 1
+                x, y = pol2cart(1, math.radians(theta_i))
+                locations.X[row_index - 1] = locations.X[index_of_father] + x
+                locations.Y[row_index - 1] = locations.Y[index_of_father] + y
+        elif total_sons == 1:
+            index_of_son = int(df.Index.values[0]) - 1
+            locations.theta[index_of_son] = theta
+            locations.r[index_of_son] = 1
+            x, y = pol2cart(1, math.radians(theta))
+            x_total = x + locations.X[index_of_father]
+            y_total = y + locations.Y[index_of_father]
+            locations.X[index_of_son] = float(x_total)
+            locations.Y[index_of_son] = float(y_total)
+        elif total_sons == 2:
+            z = 1
+            for index, row in df.iterrows():
+                row_index = row['Index']
+                theta_i = theta + ((gama / 2) * ((-1) ** z))
+                locations.theta[row_index - 1] = theta_i
+                locations.r[row_index - 1] = 1
+                x, y = pol2cart(1, math.radians(theta_i))
+                locations.X[row_index - 1] = locations.X[index_of_father] + x
+                locations.Y[row_index - 1] = locations.Y[index_of_father] + y
+                z = z + 1
+        elif total_sons == 3:
+            z = 1
+            for index, row in df.iterrows():
+                row_index = row['Index']
+                if z == 1:
+                    locations.theta[row_index - 1] = theta
+                    x, y = pol2cart(1, math.radians(theta))
+                    locations.X[row_index - 1] = locations.X[index_of_father] + x
+                    locations.Y[row_index - 1] = locations.Y[index_of_father] + y
+                    z = z + 1
+                else:
+                    theta_i = theta + (gama * ((-1) ** z))
+                    locations.theta[row_index - 1] = theta_i
+                    x, y = pol2cart(1, math.radians(theta_i))
+                    locations.X[row_index - 1] = locations.X[index_of_father] + x
+                    locations.Y[row_index - 1] = locations.Y[index_of_father] + y
+                    z = z + 1
+                locations.r[row_index - 1] = 1
+        elif (total_sons % 2) == 0:
+            z = 1
+            f = 1
+            for index, row in df.iterrows():
+                row_index = row['Index']
+                if z <= 2:
+                    theta_i = theta + ((gama / 2) * ((-1) ** z))
+                    locations.theta[row_index - 1] = theta_i
+                    r = int(df.loc[[row_index - 1], ['sons']].values[0])
+                    if r == 0:
+                        r = 1
+                    x, y = pol2cart(r, math.radians(theta_i))
+                    locations.X[row_index - 1] = locations.X[index_of_father] + x
+                    locations.Y[row_index - 1] = locations.Y[index_of_father] + y
+                    z = z + 1
+                else:
+                    theta_i = theta + (gama * ((math.ceil(f / 2)) * ((-1) ** f)))  # z=1,-1,2,2....
+                    locations.theta[row_index - 1] = theta_i
+                    r = int(df.loc[[row_index - 1], ['sons']].values[0])
+                    if r == 0:
+                        r = 1
+                    x, y = pol2cart(r, math.radians(theta_i))
+                    locations.X[row_index - 1] = locations.X[index_of_father] + x
+                    locations.Y[row_index - 1] = locations.Y[index_of_father] + y
+                    f = f + 1
+                locations.r[row_index - 1] = 1
+        else:
+            z = 1
+            f = 1
+            for index, row in df.iterrows():
+                row_index = row['Index']
+                if z == 1:
+                    z = z + 1
+                    locations.theta[row_index - 1] = theta
+                    r = int(df.loc[[row_index - 1], ['sons']].values[0])
+                    if r == 0:
+                        r = 1
+                    x, y = pol2cart(r, math.radians(theta))
+                    locations.X[row_index - 1] = locations.X[index_of_father] + x
+                    locations.Y[row_index - 1] = locations.Y[index_of_father] + y
+
+                else:
+                    theta_i = theta + (gama * ((math.ceil(f / 2)) * ((-1) ** f)))
+                    locations.theta[row_index - 1] = theta_i
+                    r = int(df.loc[[row_index - 1], ['sons']].values[0])
+                    if r == 0:
+                        r = 1
+                    x, y = pol2cart(r, math.radians(theta_i))
+                    locations.X[row_index - 1] = locations.X[index_of_father] + x
+                    locations.Y[row_index - 1] = locations.Y[index_of_father] + y
+                    f = f + 1
+finished_loc = locations[['Index', 'X', 'Y']]
+graph_layout = finished_loc.set_index('Index').T.to_dict('list')
+
+# end making locations
+First_Name = list(zip(Names['Index'], Names['Father_Index']))  # edges
+First_Name = First_Name[1:]  # edges
+G = nx.DiGraph()  # Making graph using Networkx
+G.add_nodes_from(Names['Index'])
+G.add_edges_from(First_Name)
+source_of_data = ColumnDataSource(data=dict(index=list(Names['Index']),
+                                            Name=list(Names['First_Name']),
+                                            Family=list(Names['Family ']),
+                                            Layer=Names['Layer'].astype('category'),
+                                            Note=Names['Note'],
+                                            Mother=Names['Mother']), )  # sources for Hover
+hover = HoverTool(tooltips=[("الإسم", "@Name"),
+                            ("العائلة", "@Family "),
+                            ("ملاحظة", "@Note"),
+                            ("أمه", "@Mother")])  # hover
+plot = figure(title="نسب العرب",
+              x_range=(-100, 100),
+              y_range=(-60, 60),
+              toolbar_location="below",
+              tools="wheel_zoom, box_zoom, pan, box_select",
+              plot_width=500,
+              plot_height=500,
+              aspect_ratio=True)  # making figure using Bokeh
+pos = nx.spring_layout(G, k=5 / math.sqrt(G.order()), iterations=500)
+fixed_layout_provider = StaticLayoutProvider(graph_layout=graph_layout)
+graph = from_networkx(G, pos, scale=2, center=(0, 0))
+graph.node_renderer.data_source.data['name'] = list(G.nodes())
+graph.layout_provider = fixed_layout_provider
+graph.node_renderer.glyph = Circle(size=15,
+                                   fill_color=linear_cmap('Layer', 'Spectral8', min(Names['Layer']),
+                                                          max(Names['Layer']))
+                                   )
+graph.node_renderer.data_source = source_of_data
+plot.renderers.append(graph)
+plot.add_tools(hover)
+
+# Preparing Labels
+code = """
+    var result = new Float64Array(xs.length)
+    for (var i = 0; i < xs.length; i++) {
+        result[i] = provider.graph_layout[xs[i]][%s]
+    }
+    return result
+"""
+xcoord = CustomJSTransform(v_func=code % "0", args=dict(provider=graph.layout_provider))
+ycoord = CustomJSTransform(v_func=code % "1", args=dict(provider=graph.layout_provider))
+labels = LabelSet(x=transform('index', xcoord),
+                  y=transform('index', ycoord),
+                  text='Name', text_font_size="14px",
+                  x_offset=3, y_offset=3,
+                  source=graph.node_renderer.data_source,
+                  render_mode='canvas')
+plot.renderers.append(labels)
+
+#output_file("networkx_graph.html")
+show(plot)
+#output_file("tile.html")
+
+tile_provider = get_provider(Vendors.CARTODBPOSITRON) # to add map
+# range bounds supplied in web mercator coordinates
+p = figure(x_range=(-2000000, 6000000), y_range=(-1000000, 7000000),
+           x_axis_type="mercator", y_axis_type="mercator")
+
+#p.add_tile(tile_provider)
+
+#show(p)
+#output_file('row.html')
+layout = row(plot, p)
+
+show(layout)
